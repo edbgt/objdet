@@ -5,6 +5,7 @@
 
 #include <pcl/common/common.h>
 #include <pcl_ros/transforms.hpp>
+#include <pcl_conversions/pcl_conversions.h>
 
 #include "ObjDet.hpp"
 
@@ -16,11 +17,24 @@ ObjectDetection::ObjectDetection () : rclcpp::Node ("ObjectDetectionNode") {
 
 void ObjectDetection::PointCloudReceivedCallback (const sensor_msgs::msg::PointCloud2 & msg) {
     RCLCPP_INFO(get_logger(), "received point cloud of size %u * %u", msg.width, msg.height);
+    // convert msg to pc
+    pcl::PointCloud<pcl::PointXYZ> temp_cloud;
+    //pcl::fromROSMsg(msg, temp_cloud);
+    RCLCPP_DEBUG(get_logger(), "converted");
     // show in viewer
+    this->viewer->removeAllPointClouds();
+    this->viewer->addPointCloud<pcl::PointXYZ>(this->cloud, "received cloud", 0);
+    this->viewer->spinOnce();
+    RCLCPP_DEBUG(get_logger(), "added");
 }
 
 void ObjectDetection::Start () {
     RCLCPP_INFO(get_logger(), "starting");
+    this->viewer.reset(new pcl::visualization::PCLVisualizer ());
+    this->viewer->setBackgroundColor(0.0, 0.0, 0.0);
+    this->viewer->setCameraPosition(-4.60736, 0.725677, 0.738424, 0.0829958, 0.963966, -0.252749);
+    this->viewer->addCoordinateSystem();
+    this->viewer->setShowFPS(true);
 }
 
 void ObjectDetection::Stop () {

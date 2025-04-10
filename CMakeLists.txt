@@ -20,13 +20,13 @@ find_package(PCL REQUIRED)
 
 include_directories(${PCL_INCLUDE_DIRS})
 
-#link_directories(${PCL_LIBRARY_DIRS})
+link_directories(${PCL_LIBRARY_DIRS})
 
-#add_definitions(${PCL_DEFINITIONS})
+add_definitions(${PCL_DEFINITIONS})
 
 add_executable(objdet_exe "${CMAKE_CURRENT_SOURCE_DIR}/src/ObjDet.cpp")
 
-#target_link_libraries(objdet_exe ${PCL_LIBRARIES})
+target_link_libraries(objdet_exe ${PCL_LIBRARIES})
 
 #target_include_directories(objdet_exe PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_include_directories(objdet_exe PUBLIC
