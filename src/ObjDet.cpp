@@ -19,7 +19,7 @@ void ObjectDetection::PointCloudReceivedCallback (const sensor_msgs::msg::PointC
     RCLCPP_INFO(get_logger(), "received point cloud of size %u * %u", msg.width, msg.height);
     // convert msg to pc
     pcl::PointCloud<pcl::PointXYZ> temp_cloud;
-    //pcl::fromROSMsg(msg, temp_cloud);
+    pcl::fromROSMsg(msg, *(this->cloud));
     RCLCPP_DEBUG(get_logger(), "converted");
     // show in viewer
     this->viewer->removeAllPointClouds();
@@ -30,6 +30,7 @@ void ObjectDetection::PointCloudReceivedCallback (const sensor_msgs::msg::PointC
 
 void ObjectDetection::Start () {
     RCLCPP_INFO(get_logger(), "starting");
+    this->cloud.reset(new pcl::PointCloud<pcl::PointXYZ>());
     this->viewer.reset(new pcl::visualization::PCLVisualizer ());
     this->viewer->setBackgroundColor(0.0, 0.0, 0.0);
     this->viewer->setCameraPosition(-4.60736, 0.725677, 0.738424, 0.0829958, 0.963966, -0.252749);

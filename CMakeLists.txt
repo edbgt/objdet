@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.13)
 project(objdet_node VERSION 0.0.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_BUILD_TYPE Debug)
 
 find_package(Boost COMPONENTS date_time)
 find_package(ament_cmake REQUIRED)
