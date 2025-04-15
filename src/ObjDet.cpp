@@ -29,6 +29,8 @@ void ObjectDetection::PointCloudReceivedCallback (const sensor_msgs::msg::PointC
     // show in viewer
     this->viewer->removeAllPointClouds();
     this->viewer->addPointCloud<pcl::PointXYZ>(this->cloud, "received cloud", 0);
+    Eigen::Vector4f floorParameters = CalculateFloorNormal(this->cloud);
+    DrawPlane(floorParameters);
     this->viewer->spinOnce();
 }
 
@@ -56,6 +58,18 @@ void ObjectDetection::DrawVector (Eigen::Vector3f vector, pcl::PointXYZ offset, 
     }
 }
 
+void ObjectDetection::DrawPlane (Eigen::Vector4f& planeParameters) {
+    pcl::ModelCoefficients coefficients;
+    coefficients.values.resize(4);
+    coefficients.values[0] = planeParameters.x();
+    coefficients.values[1] = planeParameters.y();
+    coefficients.values[2] = planeParameters.z();
+    coefficients.values[3] = planeParameters.w();
+    if (!this->viewer->addPlane(coefficients)) {
+        RCLCPP_ERROR(get_logger(), "could not draw plane");
+    }
+}
+
 void ObjectDetection::RemovePoints (std::vector<int> indicesToRemove) {
     // could maybe be improved, see documentation: https://pointclouds.org/documentation/classpcl_1_1_extract_indices.html#add1af519a1a4d4d2665e07a942262aac
     pcl::IndicesPtr indicesPtr = std::make_shared<std::vector<int>> (indicesToRemove);
@@ -64,6 +78,26 @@ void ObjectDetection::RemovePoints (std::vector<int> indicesToRemove) {
     extractIndicesFilter.setIndices(indicesPtr);
     extractIndicesFilter.setNegative(true);
     extractIndicesFilter.filter(*(this->cloud));
+}
+
+void ObjectDetection::RemoveFarPoints (float threshold) {
+    std::vector<int> farIndices;
+    for (int i = 0; i != this->cloud->size(); ++i) {
+        if (this->cloud->points.at(i).z > threshold) {
+            farIndices.push_back(i);
+        }
+    }
+    this->RemovePoints(farIndices);
+}
+
+void ObjectDetection::RemoveClosePoints (float threshold) {
+    std::vector<int> closeIndices;
+    for (int i = 0; i != this->cloud->size(); ++i) {
+        if (this->cloud->points.at(i).z < threshold) {
+            closeIndices.push_back(i);
+        }
+    }
+    this->RemovePoints(closeIndices);
 }
 
 Eigen::Vector3f ObjectDetection::NormalOfPlaneCloud (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, std::vector<int> indices) {
@@ -75,12 +109,11 @@ Eigen::Vector3f ObjectDetection::NormalOfPlaneCloud (pcl::PointCloud<pcl::PointX
     return normal;
 }
 
-Eigen::Vector4f CalculateFloorNormal (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud) {
+Eigen::Vector4f ObjectDetection::CalculateFloorNormal (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud) {
+    // biggest plane should be floor
     std::vector<int> inlierIndices;
     pcl::PointCloud<pcl::PointXYZ>::Ptr floorCloud (new pcl::PointCloud<pcl::PointXYZ> ());
-    pcl::SampleConsensusModelPerpendicularPlane<pcl::PointXYZ>::Ptr planeModel (new pcl::SampleConsensusModelPerpendicularPlane<pcl::PointXYZ> (inputCloud));
-    planeModel->setAxis(Eigen::Vector3f (0.0f, 1.0f, -0.27f));
-    planeModel->setEpsAngle(pcl::deg2rad(10.0f));
+    pcl::SampleConsensusModelPlane<pcl::PointXYZ>::Ptr planeModel (new pcl::SampleConsensusModelPlane<pcl::PointXYZ> (inputCloud));
     pcl::RandomSampleConsensus<pcl::PointXYZ> ransac (planeModel);
     ransac.setDistanceThreshold(0.02);
     ransac.computeModel();
@@ -90,7 +123,6 @@ Eigen::Vector4f CalculateFloorNormal (pcl::PointCloud<pcl::PointXYZ>::Ptr inputC
     pcl::computePointNormal(*inputCloud, inlierIndices, floorParameters, curve);
     return floorParameters;
 }
-
 
 int main (int argc, char * argv[]) {
     rclcpp::init(argc, argv);

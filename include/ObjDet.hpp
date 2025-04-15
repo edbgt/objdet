@@ -20,9 +20,12 @@ class ObjectDetection : public rclcpp::Node {
         void Start ();
         void Stop ();
         void DrawVector (Eigen::Vector3f vector, pcl::PointXYZ offset, float length, uint8_t r, uint8_t g, uint8_t b);
+        void DrawPlane (Eigen::Vector4f& planeParameters);
         void RemovePoints (std::vector<int> indicesToRemove);
+        void RemoveFarPoints (float threshold);
+        void RemoveClosePoints (float threshold);
         Eigen::Vector3f NormalOfPlaneCloud (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, std::vector<int> indices);
-        Eigen::Vector4f CalculateFloorNormal (pcl::PointCloud<pcl::PointXYZ>::Ptr cloud);
+        Eigen::Vector4f CalculateFloorNormal (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud);
 };
 
 #endif
