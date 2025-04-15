@@ -9,6 +9,7 @@
 #include <pcl/filters/extract_indices.h>
 #include <pcl/sample_consensus/ransac.h>
 #include <pcl/sample_consensus/sac_model_plane.h>
+#include <pcl/sample_consensus/sac_model_parallel_plane.h>
 #include <pcl/sample_consensus/sac_model_perpendicular_plane.h>
 
 #include <pcl_ros/transforms.hpp>
@@ -32,13 +33,38 @@ void ObjectDetection::PointCloudReceivedCallback (const sensor_msgs::msg::PointC
     // detect floor plane
     Eigen::Vector4f floorParameters = CalculateFloorNormal(this->cloud);
     DrawPlane(floorParameters);
+    // reduce number of points in cloud
+    RemoveFarPoints(1.0); // m
+    RemoveClosePoints(0.5); // m
+    // setup parallel plane model
+    Eigen::Vector3f floorNormal = {floorParameters.x(), floorParameters.y(), floorParameters.z()};
+    this->parallelPlaneModel->setAxis(floorNormal);
+    this->parallelPlaneModel->setEpsAngle(pcl::deg2rad(0.5f));
+    // setup parallel plane ransac
+    this->parallelPlaneRansac->setDistanceThreshold(0.005);
+    // get first plane
+    this->parallelPlaneRansac->computeModel();
+    std::vector<int> firstPlaneIndices;
+    this->parallelPlaneRansac->getInliers(firstPlaneIndices);
+    pcl::RGB firstRgb (255, 0, 255);
+    pcl::PointCloud<pcl::PointXYZ>::Ptr first;
+    pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> firstColor (first, firstRgb.r, firstRgb.g, firstRgb.b);
+    pcl::copyPointCloud(*(this->cloud), firstPlaneIndices, *first);
+    if (!this->viewer->addPointCloud<pcl::PointXYZ> (first, firstColor, "first cuboid side")) {
+        RCLCPP_ERROR(get_logger(), "could not add first cuboid side point cloud");
+    }
+    RemovePoints(firstPlaneIndices);
     this->viewer->spinOnce();
 }
 
 void ObjectDetection::Start () {
     RCLCPP_INFO(get_logger(), "starting");
-    this->cloud.reset(new pcl::PointCloud<pcl::PointXYZ>());
+    this->cloud.reset(new pcl::PointCloud<pcl::PointXYZ> ());
     this->viewer.reset(new pcl::visualization::PCLVisualizer ());
+    RCLCPP_DEBUG(get_logger(), "initializing parallel plane model");
+    this->parallelPlaneModel.reset(new pcl::SampleConsensusModelParallelPlane<pcl::PointXYZ> (this->cloud));
+    RCLCPP_DEBUG(get_logger(), "initializing parallel plane ransac");
+    this->parallelPlaneRansac.reset(new pcl::RandomSampleConsensus<pcl::PointXYZ> (this->parallelPlaneModel));
     this->viewer->setBackgroundColor(0.0, 0.0, 0.0);
     this->viewer->setCameraPosition(-4.60736, 0.725677, 0.738424, 0.0829958, 0.963966, -0.252749);
     this->viewer->addCoordinateSystem();

@@ -16,6 +16,8 @@ class ObjectDetection : public rclcpp::Node {
         rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr subscription;
         pcl::visualization::PCLVisualizer::Ptr viewer;
         pcl::PointCloud<pcl::PointXYZ>::Ptr cloud;
+        pcl::SampleConsensusModelParallelPlane<pcl::PointXYZ>::Ptr parallelPlaneModel;
+        pcl::RandomSampleConsensus<pcl::PointXYZ>::Ptr parallelPlaneRansac;
         void PointCloudReceivedCallback (const sensor_msgs::msg::PointCloud2 & msg);
         void Start ();
         void Stop ();
