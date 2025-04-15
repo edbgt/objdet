@@ -29,6 +29,7 @@ void ObjectDetection::PointCloudReceivedCallback (const sensor_msgs::msg::PointC
     // show in viewer
     this->viewer->removeAllPointClouds();
     this->viewer->addPointCloud<pcl::PointXYZ>(this->cloud, "received cloud", 0);
+    // detect floor plane
     Eigen::Vector4f floorParameters = CalculateFloorNormal(this->cloud);
     DrawPlane(floorParameters);
     this->viewer->spinOnce();
