@@ -19,6 +19,10 @@ class ObjectDetection : public rclcpp::Node {
         void PointCloudReceivedCallback (const sensor_msgs::msg::PointCloud2 & msg);
         void Start ();
         void Stop ();
+        void DrawVector (Eigen::Vector3f vector, pcl::PointXYZ offset, float length, uint8_t r, uint8_t g, uint8_t b);
+        void RemovePoints (std::vector<int> indicesToRemove);
+        Eigen::Vector3f NormalOfPlaneCloud (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, std::vector<int> indices);
+        Eigen::Vector4f CalculateFloorNormal (pcl::PointCloud<pcl::PointXYZ>::Ptr cloud);
 };
 
 #endif
