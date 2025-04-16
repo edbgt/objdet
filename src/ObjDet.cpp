@@ -38,6 +38,7 @@ void ObjectDetection::PointCloudReceivedCallback (const sensor_msgs::msg::PointC
     RemoveClosePoints(0.5); // m
     // setup parallel plane model
     Eigen::Vector3f floorNormal = {floorParameters.x(), floorParameters.y(), floorParameters.z()};
+    this->parallelPlaneModel->setInputCloud(this->cloud);
     this->parallelPlaneModel->setAxis(floorNormal);
     this->parallelPlaneModel->setEpsAngle(pcl::deg2rad(0.5f));
     // setup parallel plane ransac
@@ -47,7 +48,7 @@ void ObjectDetection::PointCloudReceivedCallback (const sensor_msgs::msg::PointC
     std::vector<int> firstPlaneIndices;
     this->parallelPlaneRansac->getInliers(firstPlaneIndices);
     pcl::RGB firstRgb (255, 0, 255);
-    pcl::PointCloud<pcl::PointXYZ>::Ptr first;
+    pcl::PointCloud<pcl::PointXYZ>::Ptr first (new pcl::PointCloud<pcl::PointXYZ> ());
     pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> firstColor (first, firstRgb.r, firstRgb.g, firstRgb.b);
     pcl::copyPointCloud(*(this->cloud), firstPlaneIndices, *first);
     if (!this->viewer->addPointCloud<pcl::PointXYZ> (first, firstColor, "first cuboid side")) {
@@ -108,6 +109,7 @@ void ObjectDetection::RemovePoints (std::vector<int> indicesToRemove) {
 }
 
 void ObjectDetection::RemoveFarPoints (float threshold) {
+    RCLCPP_DEBUG(get_logger(), "point cloud size is %lu before removing far points", this->cloud->size());
     std::vector<int> farIndices;
     for (int i = 0; i != this->cloud->size(); ++i) {
         if (this->cloud->points.at(i).z > threshold) {
@@ -115,9 +117,11 @@ void ObjectDetection::RemoveFarPoints (float threshold) {
         }
     }
     this->RemovePoints(farIndices);
+    RCLCPP_DEBUG(get_logger(), "point cloud size is %lu after removing far points", this->cloud->size());
 }
 
 void ObjectDetection::RemoveClosePoints (float threshold) {
+    RCLCPP_DEBUG(get_logger(), "point cloud size is %lu before removing close points", this->cloud->size());
     std::vector<int> closeIndices;
     for (int i = 0; i != this->cloud->size(); ++i) {
         if (this->cloud->points.at(i).z < threshold) {
@@ -125,6 +129,7 @@ void ObjectDetection::RemoveClosePoints (float threshold) {
         }
     }
     this->RemovePoints(closeIndices);
+    RCLCPP_DEBUG(get_logger(), "point cloud size is %lu after removing close points", this->cloud->size());
 }
 
 Eigen::Vector3f ObjectDetection::NormalOfPlaneCloud (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, std::vector<int> indices) {
