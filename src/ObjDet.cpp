@@ -18,7 +18,7 @@
 #include "ObjDet.hpp"
 
 ObjectDetection::ObjectDetection () : rclcpp::Node ("ObjectDetectionNode") {
-    subscription = this->create_subscription<sensor_msgs::msg::PointCloud2>("tof_point_cloud", 10, std::bind(&ObjectDetection::PointCloudReceivedCallback, this, std::placeholders::_1));
+    subscription = this->create_subscription<sensor_msgs::msg::PointCloud2>("tof_point_cloud", 1, std::bind(&ObjectDetection::PointCloudReceivedCallback, this, std::placeholders::_1));
     rclcpp::on_shutdown(std::bind(&ObjectDetection::Stop, this));
     this->Start();
 }
@@ -29,13 +29,13 @@ void ObjectDetection::PointCloudReceivedCallback (const sensor_msgs::msg::PointC
     pcl::fromROSMsg(msg, *(this->cloud));
     // show in viewer
     this->viewer->removeAllPointClouds();
-    this->viewer->addPointCloud<pcl::PointXYZ>(this->cloud, "received cloud", 0);
     // detect floor plane
-    Eigen::Vector4f floorParameters = CalculateFloorNormal(this->cloud);
+    Eigen::Vector4f floorParameters = CalculateFloorNormal(this->cloud, false);
     DrawPlane(floorParameters);
     // reduce number of points in cloud
     RemoveFarPoints(1.0); // m
     RemoveClosePoints(0.5); // m
+    this->viewer->addPointCloud<pcl::PointXYZ>(this->cloud, "received cloud", 0);
     // setup parallel plane model
     Eigen::Vector3f floorNormal = {floorParameters.x(), floorParameters.y(), floorParameters.z()};
     this->parallelPlaneModel->setInputCloud(this->cloud);
@@ -47,7 +47,7 @@ void ObjectDetection::PointCloudReceivedCallback (const sensor_msgs::msg::PointC
     this->parallelPlaneRansac->computeModel();
     std::vector<int> firstPlaneIndices;
     this->parallelPlaneRansac->getInliers(firstPlaneIndices);
-    pcl::RGB firstRgb (255, 0, 255);
+    pcl::RGB firstRgb (255, 0, 255), secondRgb (0, 255, 255);
     pcl::PointCloud<pcl::PointXYZ>::Ptr first (new pcl::PointCloud<pcl::PointXYZ> ());
     pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> firstColor (first, firstRgb.r, firstRgb.g, firstRgb.b);
     pcl::copyPointCloud(*(this->cloud), firstPlaneIndices, *first);
@@ -67,8 +67,7 @@ void ObjectDetection::Start () {
     RCLCPP_DEBUG(get_logger(), "initializing parallel plane ransac");
     this->parallelPlaneRansac.reset(new pcl::RandomSampleConsensus<pcl::PointXYZ> (this->parallelPlaneModel));
     this->viewer->setBackgroundColor(0.0, 0.0, 0.0);
-    this->viewer->setCameraPosition(-4.60736, 0.725677, 0.738424, 0.0829958, 0.963966, -0.252749);
-    this->viewer->addCoordinateSystem();
+    this->viewer->setCameraPosition(-3.12901, 0.151551, -0.847222, 0.0891162, 0.989655, -0.11243);
     this->viewer->setShowFPS(true);
 }
 
@@ -141,7 +140,7 @@ Eigen::Vector3f ObjectDetection::NormalOfPlaneCloud (pcl::PointCloud<pcl::PointX
     return normal;
 }
 
-Eigen::Vector4f ObjectDetection::CalculateFloorNormal (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud) {
+Eigen::Vector4f ObjectDetection::CalculateFloorNormal (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, bool remove) {
     // biggest plane should be floor
     std::vector<int> inlierIndices;
     pcl::PointCloud<pcl::PointXYZ>::Ptr floorCloud (new pcl::PointCloud<pcl::PointXYZ> ());
@@ -150,6 +149,9 @@ Eigen::Vector4f ObjectDetection::CalculateFloorNormal (pcl::PointCloud<pcl::Poin
     ransac.setDistanceThreshold(0.02);
     ransac.computeModel();
     ransac.getInliers(inlierIndices);
+    if (remove) {
+        RemovePoints (inlierIndices);
+    }
     Eigen::Vector4f floorParameters;
     float curve;
     pcl::computePointNormal(*inputCloud, inlierIndices, floorParameters, curve);
