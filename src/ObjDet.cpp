@@ -4,7 +4,10 @@
 #include <rclcpp/rclcpp.hpp>
 
 #include <pcl/common/angles.h>
+#include <pcl/common/centroid.h>
 #include <pcl/common/common.h>
+#include <pcl/common/distances.h>
+#include <pcl/features/boundary.h>
 #include <pcl/features/normal_3d.h>
 #include <pcl/filters/extract_indices.h>
 #include <pcl/sample_consensus/ransac.h>
@@ -24,42 +27,46 @@ ObjectDetection::ObjectDetection () : rclcpp::Node ("ObjectDetectionNode") {
 }
 
 void ObjectDetection::PointCloudReceivedCallback (const sensor_msgs::msg::PointCloud2 & msg) {
-    RCLCPP_INFO(get_logger(), "received point cloud of size %u * %u", msg.width, msg.height);
+    RCLCPP_DEBUG(get_logger(), "received point cloud of size %u * %u", msg.width, msg.height);
     // convert msg to pc
     pcl::fromROSMsg(msg, *(this->cloud));
     // show in viewer
     this->viewer->removeAllPointClouds();
-    // detect floor plane
-    Eigen::Vector4f floorParameters = CalculateFloorNormal(this->cloud, false);
-    DrawPlane(floorParameters);
-    // reduce number of points in cloud
-    RemoveFarPoints(1.0); // m
-    RemoveClosePoints(0.5); // m
-    this->viewer->addPointCloud<pcl::PointXYZ>(this->cloud, "received cloud", 0);
-    // setup parallel plane model
-    Eigen::Vector3f floorNormal = {floorParameters.x(), floorParameters.y(), floorParameters.z()};
-    this->parallelPlaneModel->setInputCloud(this->cloud);
-    this->parallelPlaneModel->setAxis(floorNormal);
-    this->parallelPlaneModel->setEpsAngle(pcl::deg2rad(0.5f));
-    // setup parallel plane ransac
-    this->parallelPlaneRansac->setDistanceThreshold(0.005);
-    // get first plane
-    this->parallelPlaneRansac->computeModel();
-    std::vector<int> firstPlaneIndices;
-    this->parallelPlaneRansac->getInliers(firstPlaneIndices);
-    pcl::RGB firstRgb (255, 0, 255), secondRgb (0, 255, 255);
-    pcl::PointCloud<pcl::PointXYZ>::Ptr first (new pcl::PointCloud<pcl::PointXYZ> ());
-    pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> firstColor (first, firstRgb.r, firstRgb.g, firstRgb.b);
-    pcl::copyPointCloud(*(this->cloud), firstPlaneIndices, *first);
-    if (!this->viewer->addPointCloud<pcl::PointXYZ> (first, firstColor, "first cuboid side")) {
-        RCLCPP_ERROR(get_logger(), "could not add first cuboid side point cloud");
+    this->viewer->removeAllShapes();
+
+    if (this->frameCounter < 10) {
+        // during first 10 frames determine floor normal
+        this->floorParams = CalculateFloorNormal(this->cloud, true);
+        this->frameCounter++;
+        RCLCPP_INFO(get_logger(), "determining floor normal");
+    } else if (this->frameCounter == 10) {
+        DrawPlane(floorParams, "floor");
+        this->floorNormal = {this->floorParams.x(), this->floorParams.y(), this->floorParams.z()};
+        this->frameCounter++;
+        RCLCPP_INFO(get_logger(), "floor normal determined");
+    } else {
+        DrawPlane(floorParams, "floor");
+        // reduce number of points in cloud
+        RemoveFarPoints(0.6); // m
+        RemoveClosePoints(0.3); // m
+        this->viewer->addPointCloud<pcl::PointXYZ>(this->cloud, "received cloud", 0);
+        std::vector<int> firstPlaneIndices = FindOrthogonalPlane(floorNormal, 1.0, 0.01);
+        pcl::RGB firstRgb (255, 0, 255), secondRgb (0, 255, 255);
+        pcl::PointCloud<pcl::PointXYZ>::Ptr first (new pcl::PointCloud<pcl::PointXYZ> ());
+        MaxExtent(first);
+        pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> firstColor (first, firstRgb.r, firstRgb.g, firstRgb.b);
+        pcl::copyPointCloud(*(this->cloud), firstPlaneIndices, *first);
+        if (!this->viewer->addPointCloud<pcl::PointXYZ> (first, firstColor, "first cuboid side")) {
+            RCLCPP_ERROR(get_logger(), "could not add first cuboid side point cloud");
+        }
+        RemovePoints(firstPlaneIndices);
     }
-    RemovePoints(firstPlaneIndices);
     this->viewer->spinOnce();
 }
 
 void ObjectDetection::Start () {
     RCLCPP_INFO(get_logger(), "starting");
+    this->frameCounter = 0;
     this->cloud.reset(new pcl::PointCloud<pcl::PointXYZ> ());
     this->viewer.reset(new pcl::visualization::PCLVisualizer ());
     RCLCPP_DEBUG(get_logger(), "initializing parallel plane model");
@@ -85,14 +92,14 @@ void ObjectDetection::DrawVector (Eigen::Vector3f vector, pcl::PointXYZ offset, 
     }
 }
 
-void ObjectDetection::DrawPlane (Eigen::Vector4f& planeParameters) {
+void ObjectDetection::DrawPlane (const Eigen::Vector4f& planeParameters, const std::string& id) {
     pcl::ModelCoefficients coefficients;
     coefficients.values.resize(4);
     coefficients.values[0] = planeParameters.x();
     coefficients.values[1] = planeParameters.y();
     coefficients.values[2] = planeParameters.z();
     coefficients.values[3] = planeParameters.w();
-    if (!this->viewer->addPlane(coefficients)) {
+    if (!this->viewer->addPlane(coefficients, id)) {
         RCLCPP_ERROR(get_logger(), "could not draw plane");
     }
 }
@@ -146,7 +153,7 @@ Eigen::Vector4f ObjectDetection::CalculateFloorNormal (pcl::PointCloud<pcl::Poin
     pcl::PointCloud<pcl::PointXYZ>::Ptr floorCloud (new pcl::PointCloud<pcl::PointXYZ> ());
     pcl::SampleConsensusModelPlane<pcl::PointXYZ>::Ptr planeModel (new pcl::SampleConsensusModelPlane<pcl::PointXYZ> (inputCloud));
     pcl::RandomSampleConsensus<pcl::PointXYZ> ransac (planeModel);
-    ransac.setDistanceThreshold(0.02);
+    ransac.setDistanceThreshold(0.01); // m
     ransac.computeModel();
     ransac.getInliers(inlierIndices);
     if (remove) {
@@ -156,6 +163,66 @@ Eigen::Vector4f ObjectDetection::CalculateFloorNormal (pcl::PointCloud<pcl::Poin
     float curve;
     pcl::computePointNormal(*inputCloud, inlierIndices, floorParameters, curve);
     return floorParameters;
+}
+
+std::vector<int> ObjectDetection::FindOrthogonalPlane (Eigen::Vector3f normal, float epsAngle, float distThreshold) {
+    // setup parallel plane model
+    this->parallelPlaneModel->setInputCloud(this->cloud);
+    this->parallelPlaneModel->setAxis(normal);
+    this->parallelPlaneModel->setEpsAngle(pcl::deg2rad(epsAngle));
+    // setup parallel plane ransac
+    this->parallelPlaneRansac->setDistanceThreshold(distThreshold);
+    // get first plane
+    this->parallelPlaneRansac->computeModel();
+    Eigen::VectorXf modelCoeffs;
+    this->parallelPlaneRansac->getModelCoefficients(modelCoeffs);
+    RCLCPP_DEBUG(get_logger(), "model coefficients of plane: %f\t%f\t%f\t%f", modelCoeffs[0], modelCoeffs[1], modelCoeffs[2], modelCoeffs[3]);
+    //DrawPlane(modelCoeffs, "cuboid side 1");
+    std::vector<int> planeIndices;
+    this->parallelPlaneRansac->getInliers(planeIndices);
+    return planeIndices;
+}
+
+float ObjectDetection::MaxExtent (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud) {
+    pcl::PointXYZ centroid;
+    pcl::computeCentroid(*inputCloud, centroid);
+    float maxExtent = 0.0;
+    RCLCPP_DEBUG(get_logger(), "size of cloud is %lu", inputCloud->size());
+    for (size_t i = 0; i != inputCloud->size(); ++i) {
+        float eucDist = pcl::euclideanDistance(inputCloud->points[i], centroid);
+        RCLCPP_DEBUG(get_logger(), "computed euclidean distance %f", eucDist);
+        if (eucDist > maxExtent) {
+            RCLCPP_DEBUG(get_logger(), "new max extent is %f", maxExtent);
+            maxExtent = eucDist;
+        }
+    }
+    RCLCPP_DEBUG(get_logger(), "max extent of cloud is %f", maxExtent);
+    return maxExtent;
+}
+
+void ObjectDetection::EstimateNormalsBoundaries () {
+    pcl::PointCloud<pcl::Normal>::Ptr normals (new pcl::PointCloud<pcl::Normal>);
+    pcl::PointCloud<pcl::Boundary>::Ptr boundaries;
+    //boundaries->resize(this->cloud->size());
+    pcl::BoundaryEstimation<pcl::PointXYZ, pcl::Normal, pcl::Boundary> estimation;
+    /*estimation.setInputCloud(this->cloud);
+    estimation.setInputNormals(normals);
+    estimation.setRadiusSearch(0.005); // 5 mm
+    pcl::search::KdTree<pcl::PointXYZ>::Ptr kdTree (new pcl::search::KdTree<pcl::PointXYZ>);
+    estimation.setSearchMethod(kdTree);
+    estimation.compute(*boundaries);
+    for (size_t i = 0; i != this->cloud->size(); ++i) {
+        if (boundaries->points[i].boundary_point != 0) {
+            this->displayCloud->points[i].r = 255;
+            this->displayCloud->points[i].g = 0;
+            this->displayCloud->points[i].b = 0;
+        } else {
+            this->displayCloud->points[i].r = 0;
+            this->displayCloud->points[i].g = 0;
+            this->displayCloud->points[i].b = 0;
+        }
+    }*/
+    //this->viewer->addPointCloud(displayCloud, "boundaries", 0);
 }
 
 int main (int argc, char * argv[]) {

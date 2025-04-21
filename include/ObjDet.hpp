@@ -13,6 +13,9 @@ class ObjectDetection : public rclcpp::Node {
     public:
         ObjectDetection ();
     private:
+        uint32_t frameCounter;
+        Eigen::Vector4f floorParams;
+        Eigen::Vector3f floorNormal;
         rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr subscription;
         pcl::visualization::PCLVisualizer::Ptr viewer;
         pcl::PointCloud<pcl::PointXYZ>::Ptr cloud;
@@ -22,12 +25,20 @@ class ObjectDetection : public rclcpp::Node {
         void Start ();
         void Stop ();
         void DrawVector (Eigen::Vector3f vector, pcl::PointXYZ offset, float length, uint8_t r, uint8_t g, uint8_t b);
-        void DrawPlane (Eigen::Vector4f& planeParameters);
+        void DrawPlane (const Eigen::Vector4f& planeParameters, const std::string& id);
         void RemovePoints (std::vector<int> indicesToRemove);
         void RemoveFarPoints (float threshold);
         void RemoveClosePoints (float threshold);
         Eigen::Vector3f NormalOfPlaneCloud (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, std::vector<int> indices);
-        Eigen::Vector4f CalculateFloorNormal (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud);
+        Eigen::Vector4f CalculateFloorNormal (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, bool remove);
+        /**
+         * @param normal        normal vector of reference plane
+         * @param epsAngle      TODO
+         * @param distThreshold maximum distance of a point from the plane
+         */
+        std::vector<int> FindOrthogonalPlane (Eigen::Vector3f normal, float epsAngle, float distThreshold);
+        float MaxExtent (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud);
+        void EstimateNormalsBoundaries ();
 };
 
 #endif
