@@ -13,7 +13,6 @@ class ObjectDetection : public rclcpp::Node {
     public:
         ObjectDetection ();
     private:
-        uint32_t frameCounter;
         Eigen::Vector4f floorParams;
         Eigen::Vector3f floorNormal;
         rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr subscription;

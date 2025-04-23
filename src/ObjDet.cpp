@@ -32,41 +32,37 @@ void ObjectDetection::PointCloudReceivedCallback (const sensor_msgs::msg::PointC
     pcl::fromROSMsg(msg, *(this->cloud));
     // show in viewer
     this->viewer->removeAllPointClouds();
-    this->viewer->removeAllShapes();
-
-    if (this->frameCounter < 10) {
-        // during first 10 frames determine floor normal
-        this->floorParams = CalculateFloorNormal(this->cloud, true);
-        this->frameCounter++;
-        RCLCPP_INFO(get_logger(), "determining floor normal");
-    } else if (this->frameCounter == 10) {
-        DrawPlane(floorParams, "floor");
-        this->floorNormal = {this->floorParams.x(), this->floorParams.y(), this->floorParams.z()};
-        this->frameCounter++;
-        RCLCPP_INFO(get_logger(), "floor normal determined");
-    } else {
-        DrawPlane(floorParams, "floor");
-        // reduce number of points in cloud
-        RemoveFarPoints(0.6); // m
-        RemoveClosePoints(0.3); // m
-        this->viewer->addPointCloud<pcl::PointXYZ>(this->cloud, "received cloud", 0);
-        std::vector<int> firstPlaneIndices = FindOrthogonalPlane(floorNormal, 1.0, 0.01);
-        pcl::RGB firstRgb (255, 0, 255), secondRgb (0, 255, 255);
-        pcl::PointCloud<pcl::PointXYZ>::Ptr first (new pcl::PointCloud<pcl::PointXYZ> ());
-        MaxExtent(first);
-        pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> firstColor (first, firstRgb.r, firstRgb.g, firstRgb.b);
-        pcl::copyPointCloud(*(this->cloud), firstPlaneIndices, *first);
-        if (!this->viewer->addPointCloud<pcl::PointXYZ> (first, firstColor, "first cuboid side")) {
-            RCLCPP_ERROR(get_logger(), "could not add first cuboid side point cloud");
-        }
-        RemovePoints(firstPlaneIndices);
+    // detect floor plane
+    Eigen::Vector4f floorParams = CalculateFloorNormal(this->cloud, true);
+    DrawPlane(floorParams, "floor");
+    // reduce number of points in cloud
+    RemoveFarPoints(0.6); // m
+    RemoveClosePoints(0.2); // m
+    this->viewer->addPointCloud<pcl::PointXYZ>(this->cloud, "received cloud", 0);
+    // setup parallel plane model
+    Eigen::Vector3f floorNormal = {floorParams.x(), floorParams.y(), floorParams.z()};
+    this->parallelPlaneModel->setInputCloud(this->cloud);
+    this->parallelPlaneModel->setAxis(floorNormal);
+    this->parallelPlaneModel->setEpsAngle(pcl::deg2rad(0.5f));
+    // setup parallel plane ransac
+    this->parallelPlaneRansac->setDistanceThreshold(0.005);
+    // get first plane
+    this->parallelPlaneRansac->computeModel();
+    std::vector<int> firstPlaneIndices;
+    this->parallelPlaneRansac->getInliers(firstPlaneIndices);
+    pcl::RGB firstRgb (255, 0, 255), secondRgb (0, 255, 255);
+    pcl::PointCloud<pcl::PointXYZ>::Ptr first (new pcl::PointCloud<pcl::PointXYZ> ());
+    pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> firstColor (first, firstRgb.r, firstRgb.g, firstRgb.b);
+    pcl::copyPointCloud(*(this->cloud), firstPlaneIndices, *first);
+    if (!this->viewer->addPointCloud<pcl::PointXYZ> (first, firstColor, "first cuboid side")) {
+        RCLCPP_ERROR(get_logger(), "could not add first cuboid side point cloud");
     }
+    RemovePoints(firstPlaneIndices);
     this->viewer->spinOnce();
 }
 
 void ObjectDetection::Start () {
     RCLCPP_INFO(get_logger(), "starting");
-    this->frameCounter = 0;
     this->cloud.reset(new pcl::PointCloud<pcl::PointXYZ> ());
     this->viewer.reset(new pcl::visualization::PCLVisualizer ());
     RCLCPP_DEBUG(get_logger(), "initializing parallel plane model");
@@ -186,17 +182,16 @@ std::vector<int> ObjectDetection::FindOrthogonalPlane (Eigen::Vector3f normal, f
 float ObjectDetection::MaxExtent (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud) {
     pcl::PointXYZ centroid;
     pcl::computeCentroid(*inputCloud, centroid);
-    float maxExtent = 0.0;
-    RCLCPP_DEBUG(get_logger(), "size of cloud is %lu", inputCloud->size());
-    for (size_t i = 0; i != inputCloud->size(); ++i) {
-        float eucDist = pcl::euclideanDistance(inputCloud->points[i], centroid);
-        RCLCPP_DEBUG(get_logger(), "computed euclidean distance %f", eucDist);
-        if (eucDist > maxExtent) {
-            RCLCPP_DEBUG(get_logger(), "new max extent is %f", maxExtent);
-            maxExtent = eucDist;
+    float maxExtent = -1.0;
+    if (inputCloud->size()) {
+        for (size_t i = 0; i != inputCloud->size(); ++i) {
+            float eucDist = pcl::euclideanDistance(inputCloud->points[i], centroid);
+            if (eucDist > maxExtent) {
+                maxExtent = eucDist;
+            }
         }
+        RCLCPP_DEBUG(get_logger(), "max extent of cloud is %f", maxExtent);
     }
-    RCLCPP_DEBUG(get_logger(), "max extent of cloud is %f", maxExtent);
     return maxExtent;
 }
 
