@@ -41,19 +41,14 @@ void ObjectDetection::PointCloudReceivedCallback (const sensor_msgs::msg::PointC
     this->viewer->addPointCloud<pcl::PointXYZ>(this->cloud, "received cloud", 0);
     // setup parallel plane model
     Eigen::Vector3f floorNormal = {floorParams.x(), floorParams.y(), floorParams.z()};
-    this->parallelPlaneModel->setInputCloud(this->cloud);
-    this->parallelPlaneModel->setAxis(floorNormal);
-    this->parallelPlaneModel->setEpsAngle(pcl::deg2rad(0.5f));
-    // setup parallel plane ransac
-    this->parallelPlaneRansac->setDistanceThreshold(0.005);
-    // get first plane
-    this->parallelPlaneRansac->computeModel();
-    std::vector<int> firstPlaneIndices;
-    this->parallelPlaneRansac->getInliers(firstPlaneIndices);
+    // get indices of points belonging to first plane
+    std::vector<int> firstPlaneIndices = FindOrthogonalPlaneRansac(floorNormal, 0.5f, 0.005);
+    // setup colors
     pcl::RGB firstRgb (255, 0, 255), secondRgb (0, 255, 255);
     pcl::PointCloud<pcl::PointXYZ>::Ptr first (new pcl::PointCloud<pcl::PointXYZ> ());
     pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> firstColor (first, firstRgb.r, firstRgb.g, firstRgb.b);
     pcl::copyPointCloud(*(this->cloud), firstPlaneIndices, *first);
+    // show point cloud
     if (!this->viewer->addPointCloud<pcl::PointXYZ> (first, firstColor, "first cuboid side")) {
         RCLCPP_ERROR(get_logger(), "could not add first cuboid side point cloud");
     }
@@ -161,7 +156,7 @@ Eigen::Vector4f ObjectDetection::CalculateFloorNormal (pcl::PointCloud<pcl::Poin
     return floorParameters;
 }
 
-std::vector<int> ObjectDetection::FindOrthogonalPlane (Eigen::Vector3f normal, float epsAngle, float distThreshold) {
+std::vector<int> ObjectDetection::FindOrthogonalPlaneRansac (Eigen::Vector3f normal, float epsAngle, float distThreshold) {
     // setup parallel plane model
     this->parallelPlaneModel->setInputCloud(this->cloud);
     this->parallelPlaneModel->setAxis(normal);
@@ -169,10 +164,8 @@ std::vector<int> ObjectDetection::FindOrthogonalPlane (Eigen::Vector3f normal, f
     // setup parallel plane ransac
     this->parallelPlaneRansac->setDistanceThreshold(distThreshold);
     // get first plane
+    RCLCPP_DEBUG(get_logger(), "until here is fine");
     this->parallelPlaneRansac->computeModel();
-    Eigen::VectorXf modelCoeffs;
-    this->parallelPlaneRansac->getModelCoefficients(modelCoeffs);
-    RCLCPP_DEBUG(get_logger(), "model coefficients of plane: %f\t%f\t%f\t%f", modelCoeffs[0], modelCoeffs[1], modelCoeffs[2], modelCoeffs[3]);
     //DrawPlane(modelCoeffs, "cuboid side 1");
     std::vector<int> planeIndices;
     this->parallelPlaneRansac->getInliers(planeIndices);

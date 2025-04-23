@@ -35,7 +35,7 @@ class ObjectDetection : public rclcpp::Node {
          * @param epsAngle      TODO
          * @param distThreshold maximum distance of a point from the plane
          */
-        std::vector<int> FindOrthogonalPlane (Eigen::Vector3f normal, float epsAngle, float distThreshold);
+        std::vector<int> FindOrthogonalPlaneRansac (Eigen::Vector3f normal, float epsAngle, float distThreshold);
         float MaxExtent (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud);
         void EstimateNormalsBoundaries ();
 };
