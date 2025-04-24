@@ -39,19 +39,9 @@ void ObjectDetection::PointCloudReceivedCallback (const sensor_msgs::msg::PointC
     // remove far and close points in cloud
     RemoveFarPoints(0.6); // m
     RemoveClosePoints(0.2); // m
+    // show remains of point cloud
     this->viewer->addPointCloud<pcl::PointXYZ>(this->cloud, "received cloud", 0);
-    // get indices of points belonging to first plane
-    std::vector<int> firstPlaneIndices = FindOrthogonalPlaneRansac(floorNormal, 0.5f, 0.005);
-    // setup colors
-    pcl::RGB firstRgb (255, 0, 255), secondRgb (0, 255, 255);
-    pcl::PointCloud<pcl::PointXYZ>::Ptr first (new pcl::PointCloud<pcl::PointXYZ> ());
-    pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> firstColor (first, firstRgb.r, firstRgb.g, firstRgb.b);
-    pcl::copyPointCloud(*(this->cloud), firstPlaneIndices, *first);
-    // show point cloud
-    if (!this->viewer->addPointCloud<pcl::PointXYZ> (first, firstColor, "first cuboid side")) {
-        RCLCPP_ERROR(get_logger(), "could not add first cuboid side point cloud");
-    }
-    RemovePoints(firstPlaneIndices);
+    // update viewer
     this->viewer->spinOnce();
 }
 
