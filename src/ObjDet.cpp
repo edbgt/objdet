@@ -24,6 +24,26 @@
 
 #include "ObjDet.hpp"
 
+uint8_t ObjectDetection::CreatePalette () {
+    this->palette.emplace_back(0x2f, 0x4f, 0x4f); // darkslategray
+    this->palette.emplace_back(0x6b, 0x8e, 0x23); // olivedrab
+    this->palette.emplace_back(0xa0, 0x52, 0x2d); // sienna
+    this->palette.emplace_back(0x19, 0x19, 0x70); // midnightblue
+    this->palette.emplace_back(0xff, 0x00, 0x00); // red
+    this->palette.emplace_back(0xff, 0xa5, 0x00); // orange
+    this->palette.emplace_back(0x00, 0x00, 0xcd); // mediumblue
+    this->palette.emplace_back(0x7f, 0xff, 0x00); // chartreuse
+    this->palette.emplace_back(0x00, 0xfa, 0x9a); // mediumspringgreen
+    this->palette.emplace_back(0x00, 0xff, 0xff); // aqua
+    this->palette.emplace_back(0xff, 0x00, 0xff); // fuchsia
+    this->palette.emplace_back(0x1e, 0x90, 0xff); // dodgerblue
+    this->palette.emplace_back(0xff, 0xff, 0x54); // laselemon
+    this->palette.emplace_back(0xdd, 0xa0, 0xdd); // plum
+    this->palette.emplace_back(0xff, 0x14, 0x93); // deeppink
+    this->palette.emplace_back(0xf5, 0xde, 0xb3); // wheat
+    return 16;
+}
+
 ObjectDetection::ObjectDetection () : rclcpp::Node ("ObjectDetectionNode") {
     subscription = this->create_subscription<sensor_msgs::msg::PointCloud2>("tof_point_cloud", 1, std::bind(&ObjectDetection::PointCloudReceivedCallback, this, std::placeholders::_1));
     rclcpp::on_shutdown(std::bind(&ObjectDetection::Stop, this));
@@ -34,22 +54,22 @@ void ObjectDetection::PointCloudReceivedCallback (const sensor_msgs::msg::PointC
     RCLCPP_DEBUG(get_logger(), "received point cloud of size %u * %u", msg.width, msg.height);
     // convert msg to pc
     pcl::fromROSMsg(msg, *(this->cloud));
-    // placeholder until filtering is implemented
-    this->filteredCloud = this->cloud;
     // remove point clouds from viewer
     this->viewer->removeAllPointClouds();
-    // remove far and close points in cloud
-    //RemoveFarPoints(0.6); // m
-    //RemoveClosePoints(0.2); // m
     // extract clusters
-    Segment();
+    DetectRemoveFloor(this->cloud);
+    // remove far and close points in cloud
+    RemoveFarPoints(0.6); // m
+    RemoveClosePoints(0.2); // m
+    std::vector<pcl::PointIndices> clusterIndices = CreateClusters(this->cloud);
+    ColorClusters(this->cloud, clusterIndices);
     // show remains of point cloud
     this->viewer->addPointCloud<pcl::PointXYZ>(this->cloud, "received cloud", 0);
     // update viewer
     this->viewer->spinOnce();
 }
 
-void ObjectDetection::Segment () {
+void ObjectDetection::DetectRemoveFloor (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud) {
     pcl::SACSegmentation<pcl::PointXYZ> segmentation;
     pcl::PointIndices::Ptr inlierIndices (new pcl::PointIndices);
     pcl::ModelCoefficients::Ptr modelCoefficients (new pcl::ModelCoefficients);
@@ -61,43 +81,67 @@ void ObjectDetection::Segment () {
     segmentation.setMaxIterations(100);
     segmentation.setDistanceThreshold(0.02);
 
-    size_t initialCloudSize = this->filteredCloud->size();
-    while (this->filteredCloud->size() > 0.3 * initialCloudSize) {
-        segmentation.setInputCloud(this->filteredCloud);
+    size_t initialCloudSize = inputCloud->size();
+    while (inputCloud->size() > 0.3 * initialCloudSize) {
+        segmentation.setInputCloud(inputCloud);
         segmentation.segment(*inlierIndices, *modelCoefficients);
         if (inlierIndices->indices.size() == 0) {
             RCLCPP_ERROR(get_logger(), "could not estimate planar model");
             return;
         }
         pcl::ExtractIndices<pcl::PointXYZ> extract;
-        extract.setInputCloud(this->filteredCloud);
+        extract.setInputCloud(inputCloud);
         extract.setIndices(inlierIndices);
+        // put all points in inlierIndices into floorCloud
         extract.setNegative(false);
         extract.filter(*floorCloud);
-        RCLCPP_INFO(get_logger(), "size of floor cloud: %lu", floorCloud->size());
+        RCLCPP_INFO(get_logger(), "removing floor cloud with size %lu", floorCloud->size());
+        // put all points not in inlierIndices in tempCloud and then in inputCloud
         extract.setNegative(true);
         extract.filter(tempCloud);
-        *(this->filteredCloud) = tempCloud;
-        RCLCPP_DEBUG(get_logger(), "size of temp cloud: %lu", tempCloud.size());
-        RCLCPP_DEBUG(get_logger(), "size of filtered cloud: %lu", this->filteredCloud->size());
-        RCLCPP_DEBUG(get_logger(), "initial size is: %lu", initialCloudSize);
+        *inputCloud = tempCloud;
     }
-    RCLCPP_WARN(get_logger(), "continuing");
+}
+
+std::vector<pcl::PointIndices> ObjectDetection::CreateClusters (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud) {
     pcl::search::KdTree<pcl::PointXYZ>::Ptr tree (new pcl::search::KdTree<pcl::PointXYZ>);
-    tree->setInputCloud(this->filteredCloud);
+    tree->setInputCloud(inputCloud);
     std::vector<pcl::PointIndices> clusterIndices;
     pcl::EuclideanClusterExtraction<pcl::PointXYZ> clusterExtraction;
     clusterExtraction.setClusterTolerance(0.02);
     clusterExtraction.setMinClusterSize(50);
     clusterExtraction.setMaxClusterSize(5000);
     clusterExtraction.setSearchMethod(tree);
-    clusterExtraction.setInputCloud(this->filteredCloud);
+    clusterExtraction.setInputCloud(inputCloud);
     clusterExtraction.extract(clusterIndices);
     RCLCPP_INFO(get_logger(), "extracted %lu clusters", clusterIndices.size());
+    return clusterIndices;
+}
+
+void ObjectDetection::ColorClusters (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, const std::vector<pcl::PointIndices> & clusterIndices) {
+    uint8_t counter = 0;
+    for (const auto & cluster : clusterIndices) {
+        pcl::PointCloud<pcl::PointXYZ>::Ptr clusterCloud (new pcl::PointCloud<pcl::PointXYZ> ());
+        for (const auto & index : cluster.indices) {
+            clusterCloud->push_back((*inputCloud)[index]);
+        }
+        clusterCloud->width = clusterCloud->size();
+        clusterCloud->height = 1;
+        clusterCloud->is_dense = true;
+        std::stringstream ss;
+        ss << "cluster" << std::setw(3) << std::setfill('0') << counter;
+        RCLCPP_DEBUG(get_logger(), "drawing cluster with size %lu", clusterCloud->size());
+        pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> color (clusterCloud, this->palette.at(counter % 16).r, this->palette.at(counter % 16).g, this->palette.at(counter % 16).b);
+        if (!this->viewer->addPointCloud<pcl::PointXYZ>(clusterCloud, color, ss.str().c_str())) {
+            RCLCPP_ERROR(get_logger(), "could not draw cluster");
+        }
+        ++counter;
+    }
 }
 
 void ObjectDetection::Start () {
     RCLCPP_INFO(get_logger(), "starting");
+    CreatePalette();
     this->cloud.reset(new pcl::PointCloud<pcl::PointXYZ> ());
     this->filteredCloud.reset(new pcl::PointCloud<pcl::PointXYZ> ());
     this->viewer.reset(new pcl::visualization::PCLVisualizer ());

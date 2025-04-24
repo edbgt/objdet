@@ -13,6 +13,7 @@ class ObjectDetection : public rclcpp::Node {
     public:
         ObjectDetection ();
     private:
+        std::vector<pcl::RGB> palette;
         Eigen::Vector4f floorParams;
         Eigen::Vector3f floorNormal;
         rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr subscription;
@@ -20,7 +21,11 @@ class ObjectDetection : public rclcpp::Node {
         pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, filteredCloud;
         pcl::SampleConsensusModelParallelPlane<pcl::PointXYZ>::Ptr parallelPlaneModel;
         pcl::RandomSampleConsensus<pcl::PointXYZ>::Ptr parallelPlaneRansac;
-        void Segment ();
+
+        uint8_t CreatePalette ();
+        void DetectRemoveFloor (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud);
+        std::vector<pcl::PointIndices> CreateClusters (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud);
+        void ColorClusters (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, const std::vector<pcl::PointIndices> & clusterIndices);
         void PointCloudReceivedCallback (const sensor_msgs::msg::PointCloud2 & msg);
         void Start ();
         void Stop ();
