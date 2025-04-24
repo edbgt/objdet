@@ -29,11 +29,21 @@ class ObjectDetection : public rclcpp::Node {
         void RemoveFarPoints (float threshold);
         void RemoveClosePoints (float threshold);
         Eigen::Vector3f NormalOfPlaneCloud (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, std::vector<int> indices);
+        /*
+         * Detect the biggest plane in the point cloud which is assumed to be the floor.
+         *
+         * @param inputCloud    cloud where floor gets detected
+         * @param remove        set to true to remove the floor points from input cloud
+         * @return              vector containing x y z w values of floor plane
+         */
         Eigen::Vector4f CalculateFloorNormal (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, bool remove);
         /**
+         * Find a plane that is orthogonal to the reference plane.
+         *
          * @param normal        normal vector of reference plane
          * @param epsAngle      TODO
          * @param distThreshold maximum distance of a point from the plane
+         * @return              indices of points belonging to plane
          */
         std::vector<int> FindOrthogonalPlaneRansac (Eigen::Vector3f normal, float epsAngle, float distThreshold);
         float MaxExtent (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud);

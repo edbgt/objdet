@@ -30,17 +30,16 @@ void ObjectDetection::PointCloudReceivedCallback (const sensor_msgs::msg::PointC
     RCLCPP_DEBUG(get_logger(), "received point cloud of size %u * %u", msg.width, msg.height);
     // convert msg to pc
     pcl::fromROSMsg(msg, *(this->cloud));
-    // show in viewer
+    // remove point clouds from viewer
     this->viewer->removeAllPointClouds();
-    // detect floor plane
+    // detect and draw floor plane
     Eigen::Vector4f floorParams = CalculateFloorNormal(this->cloud, true);
+    Eigen::Vector3f floorNormal = {floorParams.x(), floorParams.y(), floorParams.z()};
     DrawPlane(floorParams, "floor");
-    // reduce number of points in cloud
+    // remove far and close points in cloud
     RemoveFarPoints(0.6); // m
     RemoveClosePoints(0.2); // m
     this->viewer->addPointCloud<pcl::PointXYZ>(this->cloud, "received cloud", 0);
-    // setup parallel plane model
-    Eigen::Vector3f floorNormal = {floorParams.x(), floorParams.y(), floorParams.z()};
     // get indices of points belonging to first plane
     std::vector<int> firstPlaneIndices = FindOrthogonalPlaneRansac(floorNormal, 0.5f, 0.005);
     // setup colors
