@@ -10,10 +10,14 @@
 #include <pcl/features/boundary.h>
 #include <pcl/features/normal_3d.h>
 #include <pcl/filters/extract_indices.h>
+#include <pcl/sample_consensus/model_types.h>
 #include <pcl/sample_consensus/ransac.h>
 #include <pcl/sample_consensus/sac_model_plane.h>
 #include <pcl/sample_consensus/sac_model_parallel_plane.h>
 #include <pcl/sample_consensus/sac_model_perpendicular_plane.h>
+#include <pcl/search/kdtree.h>
+#include <pcl/segmentation/sac_segmentation.h>
+#include <pcl/segmentation/extract_clusters.h>
 
 #include <pcl_ros/transforms.hpp>
 #include <pcl_conversions/pcl_conversions.h>
@@ -30,24 +34,72 @@ void ObjectDetection::PointCloudReceivedCallback (const sensor_msgs::msg::PointC
     RCLCPP_DEBUG(get_logger(), "received point cloud of size %u * %u", msg.width, msg.height);
     // convert msg to pc
     pcl::fromROSMsg(msg, *(this->cloud));
+    // placeholder until filtering is implemented
+    this->filteredCloud = this->cloud;
     // remove point clouds from viewer
     this->viewer->removeAllPointClouds();
-    // detect and draw floor plane
-    Eigen::Vector4f floorParams = CalculateFloorNormal(this->cloud, true);
-    Eigen::Vector3f floorNormal = {floorParams.x(), floorParams.y(), floorParams.z()};
-    DrawPlane(floorParams, "floor");
     // remove far and close points in cloud
-    RemoveFarPoints(0.6); // m
-    RemoveClosePoints(0.2); // m
+    //RemoveFarPoints(0.6); // m
+    //RemoveClosePoints(0.2); // m
+    // extract clusters
+    Segment();
     // show remains of point cloud
     this->viewer->addPointCloud<pcl::PointXYZ>(this->cloud, "received cloud", 0);
     // update viewer
     this->viewer->spinOnce();
 }
 
+void ObjectDetection::Segment () {
+    pcl::SACSegmentation<pcl::PointXYZ> segmentation;
+    pcl::PointIndices::Ptr inlierIndices (new pcl::PointIndices);
+    pcl::ModelCoefficients::Ptr modelCoefficients (new pcl::ModelCoefficients);
+    pcl::PointCloud<pcl::PointXYZ> tempCloud;
+    pcl::PointCloud<pcl::PointXYZ>::Ptr floorCloud (new pcl::PointCloud<pcl::PointXYZ> ());
+    segmentation.setOptimizeCoefficients(true);
+    segmentation.setModelType(pcl::SACMODEL_PLANE);
+    segmentation.setMethodType(pcl::SAC_RANSAC);
+    segmentation.setMaxIterations(100);
+    segmentation.setDistanceThreshold(0.02);
+
+    size_t initialCloudSize = this->filteredCloud->size();
+    while (this->filteredCloud->size() > 0.3 * initialCloudSize) {
+        segmentation.setInputCloud(this->filteredCloud);
+        segmentation.segment(*inlierIndices, *modelCoefficients);
+        if (inlierIndices->indices.size() == 0) {
+            RCLCPP_ERROR(get_logger(), "could not estimate planar model");
+            return;
+        }
+        pcl::ExtractIndices<pcl::PointXYZ> extract;
+        extract.setInputCloud(this->filteredCloud);
+        extract.setIndices(inlierIndices);
+        extract.setNegative(false);
+        extract.filter(*floorCloud);
+        RCLCPP_INFO(get_logger(), "size of floor cloud: %lu", floorCloud->size());
+        extract.setNegative(true);
+        extract.filter(tempCloud);
+        *(this->filteredCloud) = tempCloud;
+        RCLCPP_DEBUG(get_logger(), "size of temp cloud: %lu", tempCloud.size());
+        RCLCPP_DEBUG(get_logger(), "size of filtered cloud: %lu", this->filteredCloud->size());
+        RCLCPP_DEBUG(get_logger(), "initial size is: %lu", initialCloudSize);
+    }
+    RCLCPP_WARN(get_logger(), "continuing");
+    pcl::search::KdTree<pcl::PointXYZ>::Ptr tree (new pcl::search::KdTree<pcl::PointXYZ>);
+    tree->setInputCloud(this->filteredCloud);
+    std::vector<pcl::PointIndices> clusterIndices;
+    pcl::EuclideanClusterExtraction<pcl::PointXYZ> clusterExtraction;
+    clusterExtraction.setClusterTolerance(0.02);
+    clusterExtraction.setMinClusterSize(50);
+    clusterExtraction.setMaxClusterSize(5000);
+    clusterExtraction.setSearchMethod(tree);
+    clusterExtraction.setInputCloud(this->filteredCloud);
+    clusterExtraction.extract(clusterIndices);
+    RCLCPP_INFO(get_logger(), "extracted %lu clusters", clusterIndices.size());
+}
+
 void ObjectDetection::Start () {
     RCLCPP_INFO(get_logger(), "starting");
     this->cloud.reset(new pcl::PointCloud<pcl::PointXYZ> ());
+    this->filteredCloud.reset(new pcl::PointCloud<pcl::PointXYZ> ());
     this->viewer.reset(new pcl::visualization::PCLVisualizer ());
     RCLCPP_DEBUG(get_logger(), "initializing parallel plane model");
     this->parallelPlaneModel.reset(new pcl::SampleConsensusModelParallelPlane<pcl::PointXYZ> (this->cloud));
