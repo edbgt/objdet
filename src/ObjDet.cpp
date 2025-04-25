@@ -165,6 +165,9 @@ void ObjectDetection::FindCuboidCluster (pcl::PointCloud<pcl::PointXYZ>::Ptr inp
         if (firstSideIndices.size()) {
             RCLCPP_DEBUG(get_logger(), "found first plane in cluster");
             Eigen::Vector3f firstSideNormal = NormalOfPlaneCloud (clusterCloud, firstSideIndices);
+            pcl::PointXYZ firstSideCentroid;
+            pcl::computeCentroid(*clusterCloud, firstSideIndices, firstSideCentroid);
+            DrawSmallSphere(firstSideCentroid, this->palette.at(0).r, this->palette.at(0).g, this->palette.at(0).b);
             RemovePoints(clusterCloud, firstSideIndices);
             std::vector<int> secondSideIndices = FindOrthogonalPlaneRansac(clusterCloud, firstSideNormal, 1.0, 0.005);
             if (secondSideIndices.size()) {
@@ -212,6 +215,14 @@ void ObjectDetection::DrawPlane (const Eigen::Vector4f& planeParameters, const s
     coefficients.values[3] = planeParameters.w();
     if (!this->viewer->addPlane(coefficients, id)) {
         RCLCPP_ERROR(get_logger(), "could not draw plane");
+    }
+}
+
+void ObjectDetection::DrawSmallSphere (pcl::PointXYZ center, uint8_t r, uint8_t g, uint8_t b) {
+    std::stringstream id;
+    id << std::to_string(r) << std::to_string(g) << std::to_string(b);
+    if (!this->viewer->addSphere(center, 0.005, r, g, b, id.str())) {
+        RCLCPP_ERROR(get_logger(), "could not draw sphere");
     }
 }
 

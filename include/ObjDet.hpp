@@ -33,6 +33,7 @@ class ObjectDetection : public rclcpp::Node {
         void Stop ();
         void DrawVector (Eigen::Vector3f vector, pcl::PointXYZ offset, float length, uint8_t r, uint8_t g, uint8_t b);
         void DrawPlane (const Eigen::Vector4f& planeParameters, const std::string& id);
+        void DrawSmallSphere (pcl::PointXYZ center, uint8_t r, uint8_t g, uint8_t b);
         void RemovePoints (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, std::vector<int> indicesToRemove);
         void RemoveFarPoints (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, float threshold);
         void RemoveClosePoints (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, float threshold);
