@@ -10,6 +10,7 @@
 #include <pcl/features/boundary.h>
 #include <pcl/features/normal_3d.h>
 #include <pcl/filters/extract_indices.h>
+#include <pcl/filters/voxel_grid.h>
 #include <pcl/sample_consensus/model_types.h>
 #include <pcl/sample_consensus/ransac.h>
 #include <pcl/sample_consensus/sac_model_plane.h>
@@ -56,6 +57,11 @@ void ObjectDetection::PointCloudReceivedCallback (const sensor_msgs::msg::PointC
     pcl::fromROSMsg(msg, *(this->cloud));
     // remove point clouds from viewer
     this->viewer->removeAllPointClouds();
+    // show point cloud
+    //this->viewer->addPointCloud<pcl::PointXYZ>(this->cloud, "received cloud", 0);
+    //Downsample(this->cloud, this->filteredCloud, 0.005);
+    //pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> color (this->filteredCloud, 255, 255, 0);
+    //this->viewer->addPointCloud<pcl::PointXYZ>(this->filteredCloud, color, "filtered cloud");
     // extract clusters
     DetectRemoveFloor(this->cloud);
     // remove far and close points in cloud
@@ -63,10 +69,17 @@ void ObjectDetection::PointCloudReceivedCallback (const sensor_msgs::msg::PointC
     RemoveClosePoints(0.2); // m
     std::vector<pcl::PointIndices> clusterIndices = CreateClusters(this->cloud);
     ColorClusters(this->cloud, clusterIndices);
-    // show remains of point cloud
-    this->viewer->addPointCloud<pcl::PointXYZ>(this->cloud, "received cloud", 0);
     // update viewer
     this->viewer->spinOnce();
+}
+
+void ObjectDetection::Downsample (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, pcl::PointCloud<pcl::PointXYZ>::Ptr outputCloud, float leafSize) {
+    RCLCPP_DEBUG(get_logger(), "size before downsampling: %lu", inputCloud->size());
+    pcl::VoxelGrid<pcl::PointXYZ> voxelGrid;
+    voxelGrid.setInputCloud(inputCloud);
+    voxelGrid.setLeafSize(leafSize, leafSize, leafSize);
+    voxelGrid.filter(*(outputCloud));
+    RCLCPP_DEBUG(get_logger(), "size after downsampling: %lu", outputCloud->size());
 }
 
 void ObjectDetection::DetectRemoveFloor (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud) {

@@ -27,6 +27,7 @@ class ObjectDetection : public rclcpp::Node {
         std::vector<pcl::PointIndices> CreateClusters (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud);
         void ColorClusters (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, const std::vector<pcl::PointIndices> & clusterIndices);
         void PointCloudReceivedCallback (const sensor_msgs::msg::PointCloud2 & msg);
+        void Downsample (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, pcl::PointCloud<pcl::PointXYZ>::Ptr outputCloud, float leafSize);
         void Start ();
         void Stop ();
         void DrawVector (Eigen::Vector3f vector, pcl::PointXYZ offset, float length, uint8_t r, uint8_t g, uint8_t b);
