@@ -26,15 +26,16 @@ class ObjectDetection : public rclcpp::Node {
         void DetectRemoveFloor (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud);
         std::vector<pcl::PointIndices> CreateClusters (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud);
         void ColorClusters (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, const std::vector<pcl::PointIndices> & clusterIndices);
+        void FindCuboidCluster (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, const std::vector<pcl::PointIndices> & clusterIndices);
         void PointCloudReceivedCallback (const sensor_msgs::msg::PointCloud2 & msg);
         void Downsample (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, pcl::PointCloud<pcl::PointXYZ>::Ptr outputCloud, float leafSize);
         void Start ();
         void Stop ();
         void DrawVector (Eigen::Vector3f vector, pcl::PointXYZ offset, float length, uint8_t r, uint8_t g, uint8_t b);
         void DrawPlane (const Eigen::Vector4f& planeParameters, const std::string& id);
-        void RemovePoints (std::vector<int> indicesToRemove);
-        void RemoveFarPoints (float threshold);
-        void RemoveClosePoints (float threshold);
+        void RemovePoints (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, std::vector<int> indicesToRemove);
+        void RemoveFarPoints (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, float threshold);
+        void RemoveClosePoints (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, float threshold);
         Eigen::Vector3f NormalOfPlaneCloud (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, std::vector<int> indices);
         /*
          * Detect the biggest plane in the point cloud which is assumed to be the floor.
@@ -48,11 +49,11 @@ class ObjectDetection : public rclcpp::Node {
          * Find a plane that is orthogonal to the reference plane.
          *
          * @param normal        normal vector of reference plane
-         * @param epsAngle      TODO
+         * @param epsAngle      maximum angle of deviation between reference vector and plane
          * @param distThreshold maximum distance of a point from the plane
          * @return              indices of points belonging to plane
          */
-        std::vector<int> FindOrthogonalPlaneRansac (Eigen::Vector3f normal, float epsAngle, float distThreshold);
+        std::vector<int> FindOrthogonalPlaneRansac (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, Eigen::Vector3f normal, float epsAngle, float distThreshold);
         float MaxExtent (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud);
         void EstimateNormalsBoundaries ();
 };

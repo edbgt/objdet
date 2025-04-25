@@ -59,16 +59,16 @@ void ObjectDetection::PointCloudReceivedCallback (const sensor_msgs::msg::PointC
     this->viewer->removeAllPointClouds();
     // show point cloud
     //this->viewer->addPointCloud<pcl::PointXYZ>(this->cloud, "received cloud", 0);
-    //Downsample(this->cloud, this->filteredCloud, 0.005);
-    //pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> color (this->filteredCloud, 255, 255, 0);
-    //this->viewer->addPointCloud<pcl::PointXYZ>(this->filteredCloud, color, "filtered cloud");
     // extract clusters
-    DetectRemoveFloor(this->cloud);
+    //DetectRemoveFloor(this->cloud);
+    this->floorParams = CalculateFloorNormal(this->cloud, true);
+    this->floorNormal = {floorParams.x(), floorParams.y(), floorParams.z()};
     // remove far and close points in cloud
-    RemoveFarPoints(0.6); // m
-    RemoveClosePoints(0.2); // m
+    RemoveFarPoints(this->cloud, 0.6); // m
+    RemoveClosePoints(this->cloud, 0.2); // m
     std::vector<pcl::PointIndices> clusterIndices = CreateClusters(this->cloud);
     ColorClusters(this->cloud, clusterIndices);
+    FindCuboidCluster(this->cloud, clusterIndices);
     // update viewer
     this->viewer->spinOnce();
 }
@@ -152,6 +152,28 @@ void ObjectDetection::ColorClusters (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCl
     }
 }
 
+void ObjectDetection::FindCuboidCluster (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, const std::vector<pcl::PointIndices> & clusterIndices) {
+    for (const auto & cluster : clusterIndices) {
+        pcl::PointCloud<pcl::PointXYZ>::Ptr clusterCloud (new pcl::PointCloud<pcl::PointXYZ> ());
+        for (const auto & index : cluster.indices) {
+            clusterCloud->push_back((*inputCloud)[index]);
+        }
+        clusterCloud->width = clusterCloud->size();
+        clusterCloud->height = 1;
+        clusterCloud->is_dense = true;
+        std::vector<int> firstSideIndices = FindOrthogonalPlaneRansac(clusterCloud, this->floorNormal, 1.0, 0.005);
+        if (firstSideIndices.size()) {
+            RCLCPP_DEBUG(get_logger(), "found first plane in cluster");
+            Eigen::Vector3f firstSideNormal = NormalOfPlaneCloud (clusterCloud, firstSideIndices);
+            RemovePoints(clusterCloud, firstSideIndices);
+            std::vector<int> secondSideIndices = FindOrthogonalPlaneRansac(clusterCloud, firstSideNormal, 1.0, 0.005);
+            if (secondSideIndices.size()) {
+                RCLCPP_DEBUG(get_logger(), "found second plane in cluster");
+            }
+        }
+    }
+}
+
 void ObjectDetection::Start () {
     RCLCPP_INFO(get_logger(), "starting");
     CreatePalette();
@@ -193,38 +215,38 @@ void ObjectDetection::DrawPlane (const Eigen::Vector4f& planeParameters, const s
     }
 }
 
-void ObjectDetection::RemovePoints (std::vector<int> indicesToRemove) {
+void ObjectDetection::RemovePoints (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, std::vector<int> indicesToRemove) {
     // could maybe be improved, see documentation: https://pointclouds.org/documentation/classpcl_1_1_extract_indices.html#add1af519a1a4d4d2665e07a942262aac
     pcl::IndicesPtr indicesPtr = std::make_shared<std::vector<int>> (indicesToRemove);
     pcl::ExtractIndices<pcl::PointXYZ> extractIndicesFilter;
-    extractIndicesFilter.setInputCloud(this->cloud);
+    extractIndicesFilter.setInputCloud(inputCloud);
     extractIndicesFilter.setIndices(indicesPtr);
     extractIndicesFilter.setNegative(true);
-    extractIndicesFilter.filter(*(this->cloud));
+    extractIndicesFilter.filter(*inputCloud);
 }
 
-void ObjectDetection::RemoveFarPoints (float threshold) {
-    RCLCPP_DEBUG(get_logger(), "point cloud size is %lu before removing far points", this->cloud->size());
+void ObjectDetection::RemoveFarPoints (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, float threshold) {
+    RCLCPP_DEBUG(get_logger(), "point cloud size is %lu before removing far points", inputCloud->size());
     std::vector<int> farIndices;
-    for (int i = 0; i != this->cloud->size(); ++i) {
-        if (this->cloud->points.at(i).z > threshold) {
+    for (int i = 0; i != inputCloud->size(); ++i) {
+        if (inputCloud->points.at(i).z > threshold) {
             farIndices.push_back(i);
         }
     }
-    this->RemovePoints(farIndices);
-    RCLCPP_DEBUG(get_logger(), "point cloud size is %lu after removing far points", this->cloud->size());
+    this->RemovePoints(inputCloud, farIndices);
+    RCLCPP_DEBUG(get_logger(), "point cloud size is %lu after removing far points", inputCloud->size());
 }
 
-void ObjectDetection::RemoveClosePoints (float threshold) {
-    RCLCPP_DEBUG(get_logger(), "point cloud size is %lu before removing close points", this->cloud->size());
+void ObjectDetection::RemoveClosePoints (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, float threshold) {
+    RCLCPP_DEBUG(get_logger(), "point cloud size is %lu before removing close points", inputCloud->size());
     std::vector<int> closeIndices;
-    for (int i = 0; i != this->cloud->size(); ++i) {
-        if (this->cloud->points.at(i).z < threshold) {
+    for (int i = 0; i != inputCloud->size(); ++i) {
+        if (inputCloud->points.at(i).z < threshold) {
             closeIndices.push_back(i);
         }
     }
-    this->RemovePoints(closeIndices);
-    RCLCPP_DEBUG(get_logger(), "point cloud size is %lu after removing close points", this->cloud->size());
+    this->RemovePoints(inputCloud, closeIndices);
+    RCLCPP_DEBUG(get_logger(), "point cloud size is %lu after removing close points", inputCloud->size());
 }
 
 Eigen::Vector3f ObjectDetection::NormalOfPlaneCloud (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, std::vector<int> indices) {
@@ -246,7 +268,7 @@ Eigen::Vector4f ObjectDetection::CalculateFloorNormal (pcl::PointCloud<pcl::Poin
     ransac.computeModel();
     ransac.getInliers(inlierIndices);
     if (remove) {
-        RemovePoints (inlierIndices);
+        RemovePoints(inputCloud, inlierIndices);
     }
     Eigen::Vector4f floorParameters;
     float curve;
@@ -254,15 +276,14 @@ Eigen::Vector4f ObjectDetection::CalculateFloorNormal (pcl::PointCloud<pcl::Poin
     return floorParameters;
 }
 
-std::vector<int> ObjectDetection::FindOrthogonalPlaneRansac (Eigen::Vector3f normal, float epsAngle, float distThreshold) {
+std::vector<int> ObjectDetection::FindOrthogonalPlaneRansac (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, Eigen::Vector3f normal, float epsAngle, float distThreshold) {
     // setup parallel plane model
-    this->parallelPlaneModel->setInputCloud(this->cloud);
+    this->parallelPlaneModel->setInputCloud(inputCloud);
     this->parallelPlaneModel->setAxis(normal);
     this->parallelPlaneModel->setEpsAngle(pcl::deg2rad(epsAngle));
     // setup parallel plane ransac
     this->parallelPlaneRansac->setDistanceThreshold(distThreshold);
     // get first plane
-    RCLCPP_DEBUG(get_logger(), "until here is fine");
     this->parallelPlaneRansac->computeModel();
     //DrawPlane(modelCoeffs, "cuboid side 1");
     std::vector<int> planeIndices;
