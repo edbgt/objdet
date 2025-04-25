@@ -67,7 +67,7 @@ void ObjectDetection::PointCloudReceivedCallback (const sensor_msgs::msg::PointC
     RemoveFarPoints(this->cloud, 0.6); // m
     RemoveClosePoints(this->cloud, 0.2); // m
     std::vector<pcl::PointIndices> clusterIndices = CreateClusters(this->cloud);
-    ColorClusters(this->cloud, clusterIndices);
+    //ColorClusters(this->cloud, clusterIndices);
     FindCuboidCluster(this->cloud, clusterIndices);
     // update viewer
     this->viewer->spinOnce();
@@ -153,6 +153,7 @@ void ObjectDetection::ColorClusters (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCl
 }
 
 void ObjectDetection::FindCuboidCluster (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, const std::vector<pcl::PointIndices> & clusterIndices) {
+    uint8_t counter = 0;
     for (const auto & cluster : clusterIndices) {
         pcl::PointCloud<pcl::PointXYZ>::Ptr clusterCloud (new pcl::PointCloud<pcl::PointXYZ> ());
         for (const auto & index : cluster.indices) {
@@ -163,17 +164,24 @@ void ObjectDetection::FindCuboidCluster (pcl::PointCloud<pcl::PointXYZ>::Ptr inp
         clusterCloud->is_dense = true;
         std::vector<int> firstSideIndices = FindOrthogonalPlaneRansac(clusterCloud, this->floorNormal, 1.0, 0.005);
         if (firstSideIndices.size()) {
-            RCLCPP_DEBUG(get_logger(), "found first plane in cluster");
+            RCLCPP_DEBUG(get_logger(), "found first plane in cluster %hhu", counter);
             Eigen::Vector3f firstSideNormal = NormalOfPlaneCloud (clusterCloud, firstSideIndices);
             pcl::PointXYZ firstSideCentroid;
             pcl::computeCentroid(*clusterCloud, firstSideIndices, firstSideCentroid);
+            DrawPointCloud(clusterCloud, firstSideIndices, 0);
             DrawSmallSphere(firstSideCentroid, this->palette.at(0).r, this->palette.at(0).g, this->palette.at(0).b);
             RemovePoints(clusterCloud, firstSideIndices);
             std::vector<int> secondSideIndices = FindOrthogonalPlaneRansac(clusterCloud, firstSideNormal, 1.0, 0.005);
             if (secondSideIndices.size()) {
-                RCLCPP_DEBUG(get_logger(), "found second plane in cluster");
+                RCLCPP_DEBUG(get_logger(), "found second plane in cluster %hhu", counter);
+                DrawPointCloud(clusterCloud, secondSideIndices, 1);
+            } else {
+                RCLCPP_DEBUG(get_logger(), "could not find plane in cluster %hhu", counter);
             }
+        } else {
+            RCLCPP_DEBUG(get_logger(), "could not find plane in cluster %hhu", counter);
         }
+        ++counter;
     }
 }
 
@@ -223,6 +231,17 @@ void ObjectDetection::DrawSmallSphere (pcl::PointXYZ center, uint8_t r, uint8_t 
     id << std::to_string(r) << std::to_string(g) << std::to_string(b);
     if (!this->viewer->addSphere(center, 0.005, r, g, b, id.str())) {
         RCLCPP_ERROR(get_logger(), "could not draw sphere");
+    }
+}
+
+void ObjectDetection::DrawPointCloud (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, std::vector<int> indices, uint8_t colorIndex) {
+    pcl::PointCloud<pcl::PointXYZ>::Ptr tempCloud (new pcl::PointCloud<pcl::PointXYZ> ());
+    pcl::copyPointCloud(*inputCloud, indices, *tempCloud);
+    pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> color (tempCloud, this->palette.at(colorIndex).r, this->palette.at(colorIndex).g, this->palette.at(colorIndex).b);
+    std::stringstream id;
+    id << std::to_string(this->palette.at(colorIndex).r) << std::to_string(this->palette.at(colorIndex).g) << std::to_string(this->palette.at(colorIndex).b);
+    if (!this->viewer->addPointCloud<pcl::PointXYZ>(tempCloud, color, id.str())) {
+        RCLCPP_ERROR(get_logger(), "could not draw cloud with colorIndex %hhu", colorIndex);
     }
 }
 
