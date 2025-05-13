@@ -59,13 +59,13 @@ void ObjectDetection::PointCloudReceivedCallback (const sensor_msgs::msg::PointC
     this->viewer->removeAllPointClouds();
     // show point cloud
     //this->viewer->addPointCloud<pcl::PointXYZ>(this->cloud, "received cloud", 0);
-    // extract clusters
     //DetectRemoveFloor(this->cloud);
     this->floorParams = CalculateFloorNormal(this->cloud, true);
     this->floorNormal = {floorParams.x(), floorParams.y(), floorParams.z()};
     // remove far and close points in cloud
     RemoveFarPoints(this->cloud, 0.6); // m
     RemoveClosePoints(this->cloud, 0.2); // m
+    // extract clusters
     std::vector<pcl::PointIndices> clusterIndices = CreateClusters(this->cloud);
     //ColorClusters(this->cloud, clusterIndices);
     FindCuboidCluster(this->cloud, clusterIndices);
@@ -169,12 +169,15 @@ void ObjectDetection::FindCuboidCluster (pcl::PointCloud<pcl::PointXYZ>::Ptr inp
             pcl::PointXYZ firstSideCentroid;
             pcl::computeCentroid(*clusterCloud, firstSideIndices, firstSideCentroid);
             DrawPointCloud(clusterCloud, firstSideIndices, 0);
-            DrawSmallSphere(firstSideCentroid, this->palette.at(0).r, this->palette.at(0).g, this->palette.at(0).b);
+            DrawSmallSphere(firstSideCentroid, 3);
             RemovePoints(clusterCloud, firstSideIndices);
             std::vector<int> secondSideIndices = FindOrthogonalPlaneRansac(clusterCloud, firstSideNormal, 1.0, 0.005);
             if (secondSideIndices.size()) {
                 RCLCPP_DEBUG(get_logger(), "found second plane in cluster %hhu", counter);
                 DrawPointCloud(clusterCloud, secondSideIndices, 1);
+                pcl::PointXYZ secondSideCentroid;
+                pcl::computeCentroid(*clusterCloud, secondSideIndices, secondSideCentroid);
+                DrawSmallSphere(secondSideCentroid, 4);
             } else {
                 RCLCPP_DEBUG(get_logger(), "could not find plane in cluster %hhu", counter);
             }
@@ -226,10 +229,10 @@ void ObjectDetection::DrawPlane (const Eigen::Vector4f& planeParameters, const s
     }
 }
 
-void ObjectDetection::DrawSmallSphere (pcl::PointXYZ center, uint8_t r, uint8_t g, uint8_t b) {
+void ObjectDetection::DrawSmallSphere (pcl::PointXYZ center, uint8_t colorIndex) {
     std::stringstream id;
-    id << std::to_string(r) << std::to_string(g) << std::to_string(b);
-    if (!this->viewer->addSphere(center, 0.005, r, g, b, id.str())) {
+    id << std::to_string(this->palette.at(colorIndex).r) << std::to_string(this->palette.at(colorIndex).g) << std::to_string(this->palette.at(colorIndex).b);
+    if (!this->viewer->addSphere(center, 0.005, this->palette.at(colorIndex).r, this->palette.at(colorIndex).g, this->palette.at(colorIndex).b, id.str())) {
         RCLCPP_ERROR(get_logger(), "could not draw sphere");
     }
 }
@@ -335,31 +338,6 @@ float ObjectDetection::MaxExtent (pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud
         RCLCPP_DEBUG(get_logger(), "max extent of cloud is %f", maxExtent);
     }
     return maxExtent;
-}
-
-void ObjectDetection::EstimateNormalsBoundaries () {
-    pcl::PointCloud<pcl::Normal>::Ptr normals (new pcl::PointCloud<pcl::Normal>);
-    pcl::PointCloud<pcl::Boundary>::Ptr boundaries;
-    //boundaries->resize(this->cloud->size());
-    pcl::BoundaryEstimation<pcl::PointXYZ, pcl::Normal, pcl::Boundary> estimation;
-    /*estimation.setInputCloud(this->cloud);
-    estimation.setInputNormals(normals);
-    estimation.setRadiusSearch(0.005); // 5 mm
-    pcl::search::KdTree<pcl::PointXYZ>::Ptr kdTree (new pcl::search::KdTree<pcl::PointXYZ>);
-    estimation.setSearchMethod(kdTree);
-    estimation.compute(*boundaries);
-    for (size_t i = 0; i != this->cloud->size(); ++i) {
-        if (boundaries->points[i].boundary_point != 0) {
-            this->displayCloud->points[i].r = 255;
-            this->displayCloud->points[i].g = 0;
-            this->displayCloud->points[i].b = 0;
-        } else {
-            this->displayCloud->points[i].r = 0;
-            this->displayCloud->points[i].g = 0;
-            this->displayCloud->points[i].b = 0;
-        }
-    }*/
-    //this->viewer->addPointCloud(displayCloud, "boundaries", 0);
 }
 
 int main (int argc, char * argv[]) {
